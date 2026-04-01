@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import useGameState from './hooks/useGameState';
 import ModeSelect from './components/ModeSelect';
 import ConfigScreen from './components/ConfigScreen';
@@ -13,24 +13,46 @@ export default function App() {
   const [screen, setScreen] = useState('menu');
   const [selectedMode, setSelectedMode] = useState(null);
 
+  // Navigate to a screen and push browser history so back button works
+  function navigateTo(newScreen) {
+    window.history.pushState({ screen: newScreen }, '', '');
+    setScreen(newScreen);
+  }
+
+  // Handle browser back button
+  const handlePopState = useCallback((e) => {
+    const targetScreen = e.state?.screen || 'menu';
+    setScreen(targetScreen);
+    if (targetScreen === 'menu') {
+      resetSession();
+    }
+  }, [resetSession]);
+
+  useEffect(() => {
+    // Set initial history state
+    window.history.replaceState({ screen: 'menu' }, '', '');
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [handlePopState]);
+
   function handleSelectMode(mode, quickStart = false) {
     setSelectedMode(mode);
     setLastMode(mode);
 
     if (mode === 'training') {
-      setScreen('training-choice');
+      navigateTo('training-choice');
     } else if (quickStart) {
       startGame(mode);
     } else {
-      setScreen('config');
+      navigateTo('config');
     }
   }
 
   function handleTrainingChoice(choice) {
     if (choice === 'memorization') {
-      setScreen('memorization');
+      navigateTo('memorization');
     } else {
-      setScreen('config');
+      navigateTo('config');
     }
   }
 
@@ -38,17 +60,19 @@ export default function App() {
     const m = mode || selectedMode;
     resetSession();
     setSelectedMode(m);
-    setScreen('game');
+    navigateTo('game');
   }
 
   function handleEndGame() {
+    // Clear forward history and go to menu
+    window.history.pushState({ screen: 'menu' }, '', '');
     setScreen('menu');
     resetSession();
   }
 
   function handleBack() {
-    setScreen('menu');
-    resetSession();
+    // Use browser back to keep history consistent
+    window.history.back();
   }
 
   return (
@@ -57,7 +81,7 @@ export default function App() {
         <ModeSelect
           gameState={gameState}
           onSelectMode={handleSelectMode}
-          onSettings={() => setScreen('settings')}
+          onSettings={() => navigateTo('settings')}
         />
       )}
 
