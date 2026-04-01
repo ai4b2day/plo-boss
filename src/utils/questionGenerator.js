@@ -1,6 +1,7 @@
 /**
  * Dynamic Question Generator for PLO Dealer Math Trainer
- * Generates mathematically valid scenarios based on difficulty level and blind configuration.
+ * Every question explicitly states the full action sequence before asking for a number.
+ * No question should be answerable without the context provided in the prompt.
  */
 
 import { potSizedRaise, preflopPot, preflopPotSizedRaise } from './potCalc.js';
@@ -24,6 +25,8 @@ function pickRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+function fmt(n) { return `$${n}`; }
+
 // Generate plausible wrong answers using common dealer mistakes
 function generateDistractors(correctAnswer, scenario) {
   const distractors = new Set();
@@ -31,31 +34,39 @@ function generateDistractors(correctAnswer, scenario) {
 
   if (type === 'blinds-only' && scenario.question === 'raise') {
     const { sb, bb } = scenario;
+    // Mistake: forgot the dead SB, just did 3×BB
+    distractors.add(3 * bb);
     // Mistake: used 2× instead of 3×
-    distractors.add(2 * bb + sb + bb);
-    // Mistake: forgot to add the call (just 3×bb + pot without BB)
-    distractors.add(3 * bb + sb);
-    // Mistake: calculated 3×pot instead of formula
+    distractors.add(2 * bb + sb);
+    // Mistake: multiplied the starting pot by 3
     distractors.add(3 * (sb + bb));
+  } else if (type === 'single-raise') {
+    const { raiseAmount, sb, numCallers } = scenario;
+    // Mistake: forgot the dead SB money
+    distractors.add(raiseAmount * (numCallers + 1));
+    // Mistake: included the blinds again instead of using dead money
+    distractors.add(raiseAmount * (numCallers + 1) + raiseAmount);
+    // Mistake: subtracted instead of adding dead money
+    distractors.add(Math.max(1, sb + raiseAmount * (numCallers + 1) - sb * 2));
   } else if (type === 'flop-bet') {
     const { existingPot, betAmount } = scenario;
     // Mistake: used 2× instead of 3×
     distractors.add(2 * betAmount + existingPot);
     // Mistake: forgot to add the pot
     distractors.add(3 * betAmount);
-    // Mistake: added pot after (bet + pot) × 3
+    // Mistake: (bet + pot) × 3
     distractors.add(3 * (betAmount + existingPot));
   } else if (type === 'reraise') {
-    const { existingPot, firstRaise } = scenario;
-    // Mistake: used 2× instead of 3×
-    distractors.add(2 * firstRaise + existingPot + firstRaise);
-    // Mistake: forgot to account for the call
-    distractors.add(3 * firstRaise + existingPot);
-    // Mistake: doubled the raise instead of 3×
-    distractors.add(2 * firstRaise + existingPot);
+    const { existingPot, firstBet, firstRaise } = scenario;
+    // Mistake: applied 3× to firstBet instead of firstRaise
+    distractors.add(potSizedRaise(firstBet, existingPot + firstBet));
+    // Mistake: used pot before A's bet
+    distractors.add(potSizedRaise(firstRaise, existingPot));
+    // Mistake: used 2× on firstRaise
+    distractors.add(2 * firstRaise + (existingPot + firstBet));
   }
 
-  // Fill remaining slots with close-but-wrong values
+  // Fill remaining with close-but-wrong values
   const offsets = [-10, -5, 5, 10, -15, 15, -20, 20, -3, 3, -7, 7];
   for (const off of shuffle(offsets)) {
     if (distractors.size >= 3) break;
@@ -65,7 +76,7 @@ function generateDistractors(correctAnswer, scenario) {
     }
   }
 
-  // Fallback: percentage-based distractors
+  // Fallback: percentage-based
   const pcts = [0.7, 0.85, 1.15, 1.3, 0.5, 1.5];
   for (const p of shuffle(pcts)) {
     if (distractors.size >= 3) break;
@@ -78,7 +89,7 @@ function generateDistractors(correctAnswer, scenario) {
   return [...distractors].slice(0, 3);
 }
 
-// LEVEL 1: Blinds Only
+// ─── LEVEL 1: Blinds Only ──────────────────────────────────────────────────
 function generateLevel1(blinds) {
   const { sb, bb } = pickRandom(blinds);
   const questionType = Math.random() < 0.4 ? 'pot' : 'raise';
@@ -90,34 +101,53 @@ function generateLevel1(blinds) {
       question: 'pot',
       sb,
       bb,
-      prompt: `$${sb}/$${bb} PLO game. What is the starting pot?`,
+      prompt:
+        `${fmt(sb)}/${fmt(bb)} PLO. ` +
+        `SB posts ${fmt(sb)}, BB posts ${fmt(bb)}. ` +
+        `No other action yet. ` +
+        `What is the total pot before anyone acts?`,
       answer: preflopPot(sb, bb),
       positions: ['SB', 'BB'],
       streetLabel: 'Preflop',
     };
   } else {
+    const answer = preflopPotSizedRaise(sb, bb);
+    // Verify: call BB ($bb) → pot = sb+bb+bb = sb+2bb, raise by that pot → total = bb + (sb+2bb) = sb+3bb = 3bb+sb ✓
     return {
       type: 'blinds-only',
       level: 1,
       question: 'raise',
       sb,
       bb,
-      prompt: `$${sb}/$${bb} PLO game. What is the maximum pot-sized raise preflop?`,
-      answer: preflopPotSizedRaise(sb, bb),
+      prompt:
+        `${fmt(sb)}/${fmt(bb)} PLO. ` +
+        `SB posts ${fmt(sb)}, BB posts ${fmt(bb)}. ` +
+        `Action folds to UTG — no raises yet. ` +
+        `UTG wants to make a pot-sized raise. ` +
+        `What is the total amount UTG must put in?`,
+      answer,
       positions: ['SB', 'BB', 'UTG'],
       streetLabel: 'Preflop',
     };
   }
 }
 
-// LEVEL 2: Single Preflop Raise
+// ─── LEVEL 2: Single Preflop Raise + Callers ──────────────────────────────
 function generateLevel2(blinds) {
   const { sb, bb } = pickRandom(blinds);
-  const pot = sb + bb;
-  // First raiser pot-sizes it
   const raiseAmount = preflopPotSizedRaise(sb, bb);
-  const numCallers = rand(1, 3);
-  const totalPot = raiseAmount * (numCallers + 1);
+
+  // SB folds (dead money), BB always calls, 0–2 extra callers
+  const extraCallers = rand(0, 2);
+  const callerPositions = ['BB', ...POSITIONS.slice(3, 3 + extraCallers)];
+  const numCallers = callerPositions.length; // BB + extras
+
+  // Pot = dead SB + raiseAmount × (UTG raiser + all callers)
+  const totalPot = sb + raiseAmount * (numCallers + 1);
+
+  const callerText = extraCallers === 0
+    ? 'Only the BB calls.'
+    : `The BB calls. ${extraCallers} more player${extraCallers > 1 ? 's' : ''} call${extraCallers === 1 ? 's' : ''}.`;
 
   return {
     type: 'single-raise',
@@ -127,38 +157,50 @@ function generateLevel2(blinds) {
     bb,
     raiseAmount,
     numCallers,
-    prompt: `$${sb}/$${bb} PLO. UTG raises pot to $${raiseAmount}. ${numCallers} player${numCallers > 1 ? 's' : ''} call${numCallers === 1 ? 's' : ''}. What is the total pot?`,
+    extraCallers,
+    prompt:
+      `${fmt(sb)}/${fmt(bb)} PLO. ` +
+      `SB posts ${fmt(sb)}, BB posts ${fmt(bb)}. ` +
+      `UTG raises to ${fmt(raiseAmount)}. ` +
+      `SB folds (${fmt(sb)} stays in pot). ` +
+      `${callerText} ` +
+      `What is the total pot going to the flop?`,
     answer: totalPot,
-    positions: ['SB', 'BB', 'UTG', ...POSITIONS.slice(3, 3 + numCallers)],
+    positions: ['SB', 'BB', 'UTG', ...POSITIONS.slice(3, 3 + extraCallers)],
     streetLabel: 'Preflop',
   };
 }
 
-// LEVEL 3: Flop Betting
+// ─── LEVEL 3: Flop Betting ────────────────────────────────────────────────
 function generateLevel3(blinds) {
   const { sb, bb } = pickRandom(blinds);
-  // Simulate a preflop pot with some callers
-  const numPreflopCallers = rand(2, 4);
-  const preflopCallAmount = bb; // Limped pot for simplicity, or raised
-  const isRaised = Math.random() < 0.5;
 
-  let existingPot;
-  if (isRaised) {
-    const raiseAmount = preflopPotSizedRaise(sb, bb);
-    const callers = rand(1, 3);
-    existingPot = raiseAmount * (callers + 1);
-  } else {
-    existingPot = bb * numPreflopCallers;
-  }
+  // Build a clean preflop pot with explicit accounting
+  const raiseAmount = preflopPotSizedRaise(sb, bb);
+  const preflopCallers = rand(1, 3); // BB + extras (all call)
+  // Pot = dead SB + raiseAmount × (UTG + callers)
+  const preflopPotTotal = sb + raiseAmount * (preflopCallers + 1);
 
-  // Bet on the flop: pot-sized, half-pot, or 2/3 pot
+  // Flop bet
   const betType = pickRandom(['pot', 'half', 'twothirds']);
   let betAmount;
-  if (betType === 'pot') betAmount = existingPot;
-  else if (betType === 'half') betAmount = Math.round(existingPot / 2);
-  else betAmount = Math.round((existingPot * 2) / 3);
+  let betLabel;
+  if (betType === 'pot') {
+    betAmount = preflopPotTotal;
+    betLabel = 'pot';
+  } else if (betType === 'half') {
+    betAmount = Math.round(preflopPotTotal / 2);
+    betLabel = 'half-pot';
+  } else {
+    betAmount = Math.round((preflopPotTotal * 2) / 3);
+    betLabel = 'two-thirds pot';
+  }
 
-  const answer = potSizedRaise(betAmount, existingPot);
+  const answer = potSizedRaise(betAmount, preflopPotTotal);
+
+  const callerText = preflopCallers === 1
+    ? 'BB calls'
+    : `BB and ${preflopCallers - 1} other${preflopCallers > 2 ? 's' : ''} call`;
 
   return {
     type: 'flop-bet',
@@ -166,44 +208,44 @@ function generateLevel3(blinds) {
     question: 'max-raise',
     sb,
     bb,
-    existingPot,
+    existingPot: preflopPotTotal,
     betAmount,
-    prompt: `Pot is $${existingPot} on the flop. Player bets $${betAmount}. What is the maximum pot-sized raise?`,
+    prompt:
+      `${fmt(sb)}/${fmt(bb)} PLO. ` +
+      `Preflop: UTG raises to ${fmt(raiseAmount)}, SB folds, ${callerText}. ` +
+      `Pot going to flop: ${fmt(preflopPotTotal)}. ` +
+      `On the flop, UTG bets ${fmt(betAmount)} (${betLabel}). ` +
+      `What is the maximum pot-sized raise on this bet?`,
     answer,
-    positions: ['SB', 'BB', 'UTG', 'BTN'],
+    positions: ['SB', 'BB', 'UTG', ...POSITIONS.slice(3, 3 + preflopCallers - 1)],
     streetLabel: 'Flop',
   };
 }
 
-// LEVEL 4: Multi-Action Streets
+// ─── LEVEL 4: Multi-Action Streets ────────────────────────────────────────
 function generateLevel4(blinds) {
   const { sb, bb } = pickRandom(blinds);
-  const pot = sb + bb;
 
-  // Preflop: raise and calls
+  // Preflop
   const raiseAmount = preflopPotSizedRaise(sb, bb);
-  const preflopCallers = rand(1, 3);
-  let runningPot = raiseAmount * (preflopCallers + 1);
+  const preflopCallers = rand(1, 2);
+  const preflopPotTotal = sb + raiseAmount * (preflopCallers + 1);
 
-  // Flop: bet and call(s)
+  // Flop: bet and single caller
   const flopBetRatio = pickRandom([1, 0.5, 2 / 3]);
-  const flopBet = Math.round(runningPot * flopBetRatio);
-  const flopCallers = rand(1, 2);
-  const potAfterFlop = runningPot + flopBet * (flopCallers + 1);
+  const flopBet = Math.round(preflopPotTotal * flopBetRatio);
+  const flopLabel = flopBetRatio === 1 ? 'pot' : flopBetRatio === 0.5 ? 'half-pot' : '2/3-pot';
+  const potAfterFlop = preflopPotTotal + flopBet * 2; // bet + 1 caller
 
-  // Turn: bet
+  // Turn: ask for the max raise on a given bet
   const turnBetRatio = pickRandom([1, 0.5, 2 / 3]);
   const turnBet = Math.round(potAfterFlop * turnBetRatio);
+  const turnLabel = turnBetRatio === 1 ? 'pot' : turnBetRatio === 0.5 ? 'half-pot' : '2/3-pot';
   const turnAnswer = potSizedRaise(turnBet, potAfterFlop);
 
-  const actions = [
-    { type: 'blinds', sb, bb },
-    { type: 'raise', player: 'UTG', amount: raiseAmount },
-    ...Array(preflopCallers).fill(null).map((_, i) => ({ type: 'call', player: POSITIONS[4 + i] || 'Player', amount: raiseAmount })),
-    { type: 'bet', player: 'UTG', amount: flopBet, street: 'Flop' },
-    ...Array(flopCallers).fill(null).map((_, i) => ({ type: 'call', player: POSITIONS[4 + i] || 'Player', amount: flopBet })),
-    { type: 'bet', player: 'UTG', amount: turnBet, street: 'Turn' },
-  ];
+  const preflopCallerText = preflopCallers === 1
+    ? 'BB calls'
+    : `BB and one other call`;
 
   return {
     type: 'multi-street',
@@ -213,28 +255,45 @@ function generateLevel4(blinds) {
     bb,
     existingPot: potAfterFlop,
     betAmount: turnBet,
-    actions,
-    prompt: `Preflop: UTG raises to $${raiseAmount}, ${preflopCallers} caller${preflopCallers > 1 ? 's' : ''} (pot: $${runningPot}). Flop: bet $${flopBet}, ${flopCallers} caller${flopCallers > 1 ? 's' : ''} (pot: $${potAfterFlop}). Turn: bet $${turnBet}. What is the max raise?`,
+    prompt:
+      `${fmt(sb)}/${fmt(bb)} PLO. ` +
+      `Preflop: UTG raises to ${fmt(raiseAmount)}, SB folds, ${preflopCallerText}. Pot: ${fmt(preflopPotTotal)}. ` +
+      `Flop: UTG bets ${fmt(flopBet)} (${flopLabel}), one player calls. Pot: ${fmt(potAfterFlop)}. ` +
+      `Turn: UTG bets ${fmt(turnBet)} (${turnLabel}). ` +
+      `What is the maximum pot-sized raise on this bet?`,
     answer: turnAnswer,
-    positions: POSITIONS.slice(0, preflopCallers + 3),
+    positions: POSITIONS.slice(0, preflopCallers + 2),
     streetLabel: 'Turn',
   };
 }
 
-// LEVEL 5: Re-Raises and All-In
+// ─── LEVEL 5: Re-Raises and All-In ────────────────────────────────────────
 function generateLevel5(blinds) {
   const { sb, bb } = pickRandom(blinds);
   const isReRaise = Math.random() < 0.6;
 
   if (isReRaise) {
-    // Pot exists, someone bets, someone raises, what's the re-raise?
-    const numCallers = rand(2, 4);
-    const existingPot = bb * numCallers * rand(2, 5);
+    // Build pot from a clean multi-caller preflop
+    const callers = rand(2, 4);
+    const raisePreflop = preflopPotSizedRaise(sb, bb);
+    const existingPot = sb + raisePreflop * (callers + 1); // a realistic pot
+
+    // A bets into that pot
     const firstBet = Math.round(existingPot * pickRandom([0.5, 2 / 3, 1]));
-    const potAfterBet = existingPot + firstBet;
+    const betLabel = firstBet === existingPot ? 'pot' : firstBet === Math.round(existingPot / 2) ? 'half-pot' : '2/3-pot';
+
+    // B pot-raises over A's bet
+    // firstRaise = total B puts in = 3 × firstBet + existingPot
     const firstRaise = potSizedRaise(firstBet, existingPot);
+
+    // Pot after A bets and B raises:
+    // = existingPot + firstBet (A's bet) + firstRaise (B's total)
     const potAfterRaise = existingPot + firstBet + firstRaise;
-    const reRaiseAmount = potSizedRaise(firstRaise - firstBet, potAfterRaise);
+
+    // C re-raises. C faces firstRaise total to call.
+    // Pot before B's raise = existingPot + firstBet (after A bet)
+    // Re-raise = 3 × firstRaise + (existingPot + firstBet)
+    const reRaiseAmount = potSizedRaise(firstRaise, existingPot + firstBet);
 
     return {
       type: 'reraise',
@@ -245,15 +304,23 @@ function generateLevel5(blinds) {
       existingPot,
       firstBet,
       firstRaise,
-      prompt: `Pot is $${existingPot}. Player A bets $${firstBet}. Player B raises to $${firstRaise}. What is the maximum pot-sized re-raise for Player C?`,
+      potAfterRaise,
+      prompt:
+        `The pot is ${fmt(existingPot)}. ` +
+        `Player A bets ${fmt(firstBet)} (${betLabel}). ` +
+        `Player B raises to ${fmt(firstRaise)} (pot-sized raise over A's bet). ` +
+        `Pot after B raises: ${fmt(potAfterRaise)}. ` +
+        `Player C has not yet acted. ` +
+        `What is the maximum pot-sized re-raise Player C can make?`,
       answer: reRaiseAmount,
       positions: ['A', 'B', 'C'],
-      streetLabel: 'Action',
+      streetLabel: 'Re-Raise',
     };
   } else {
     // All-in validity check
     const existingPot = bb * rand(5, 20);
-    const playerStack = Math.round(existingPot * pickRandom([0.3, 0.6, 0.9, 1.1, 1.5, 2.0]));
+    const multiplier = pickRandom([0.3, 0.6, 0.9, 1.1, 1.5, 2.0]);
+    const playerStack = Math.round(existingPot * multiplier);
     const isValid = playerStack <= existingPot;
 
     return {
@@ -264,37 +331,47 @@ function generateLevel5(blinds) {
       bb,
       existingPot,
       playerStack,
-      prompt: `Pot is $${existingPot}. Player has $${playerStack} remaining. Can they go all-in? (The pot-sized bet is $${existingPot})`,
+      prompt:
+        `The pot is ${fmt(existingPot)}. ` +
+        `A pot-sized bet would be ${fmt(existingPot)}. ` +
+        `Player has ${fmt(playerStack)} remaining in their stack. ` +
+        `In PLO a player can only go all-in if their stack does not exceed the pot-sized bet. ` +
+        `Is this all-in valid?`,
       answer: isValid ? 1 : 0,
-      answerLabel: isValid ? 'Yes' : 'No',
+      answerLabel: isValid ? 'Yes — stack is within pot-sized bet' : 'No — stack exceeds pot-sized bet',
       positions: ['Player'],
       streetLabel: 'All-In Check',
     };
   }
 }
 
-// LEVEL 6: Full Hand Speed Drill
+// ─── LEVEL 6: Full Hand Speed Drill ───────────────────────────────────────
 function generateLevel6(blinds) {
   const { sb, bb } = pickRandom(blinds);
-  const numPlayers = rand(3, 6);
+  const numPlayers = rand(3, 5);
 
   // Preflop
   const preflopRaise = preflopPotSizedRaise(sb, bb);
-  const preflopCallers = rand(1, Math.min(numPlayers - 1, 3));
-  let pot = preflopRaise * (preflopCallers + 1);
+  const preflopCallers = rand(1, Math.min(numPlayers - 2, 3));
+  let pot = sb + preflopRaise * (preflopCallers + 1);
+  const preflopPotSnapshot = pot;
 
-  // Flop
-  const flopBet = Math.round(pot * pickRandom([0.5, 2 / 3, 1]));
-  const flopCallers = rand(1, Math.min(preflopCallers, 2));
-  pot = pot + flopBet * (flopCallers + 1);
+  // Flop: bet + 1 caller
+  const flopBetRatio = pickRandom([0.5, 2 / 3, 1]);
+  const flopBet = Math.round(pot * flopBetRatio);
+  pot = pot + flopBet * 2;
+  const flopPotSnapshot = pot;
 
-  // Turn
-  const turnBet = Math.round(pot * pickRandom([0.5, 2 / 3, 1]));
-  const turnCallers = rand(1, Math.min(flopCallers, 2));
-  pot = pot + turnBet * (turnCallers + 1);
+  // Turn: bet + 1 caller
+  const turnBetRatio = pickRandom([0.5, 2 / 3, 1]);
+  const turnBet = Math.round(pot * turnBetRatio);
+  pot = pot + turnBet * 2;
 
-  // River: what's the pot-sized bet?
-  const riverAnswer = pot;
+  const riverPot = pot;
+
+  const preflopText = `SB folds, ${preflopCallers} player${preflopCallers > 1 ? 's' : ''} call${preflopCallers === 1 ? 's' : ''}`;
+  const flopRatioLabel = flopBetRatio === 1 ? 'pot' : flopBetRatio === 0.5 ? 'half-pot' : '2/3-pot';
+  const turnRatioLabel = turnBetRatio === 1 ? 'pot' : turnBetRatio === 0.5 ? 'half-pot' : '2/3-pot';
 
   return {
     type: 'full-hand',
@@ -302,14 +379,19 @@ function generateLevel6(blinds) {
     question: 'river-pot',
     sb,
     bb,
-    prompt: `$${sb}/$${bb}. Preflop: raise to $${preflopRaise}, ${preflopCallers} caller${preflopCallers > 1 ? 's' : ''}. Flop: bet $${flopBet}, ${flopCallers} caller${flopCallers > 1 ? 's' : ''}. Turn: bet $${turnBet}, ${turnCallers} caller${turnCallers > 1 ? 's' : ''}. What is the pot on the river?`,
-    answer: riverAnswer,
+    prompt:
+      `${fmt(sb)}/${fmt(bb)} PLO — track the pot through each street: ` +
+      `Preflop: UTG raises to ${fmt(preflopRaise)}, ${preflopText} → pot ${fmt(preflopPotSnapshot)}. ` +
+      `Flop: bet ${fmt(flopBet)} (${flopRatioLabel}), 1 caller → pot ${fmt(flopPotSnapshot)}. ` +
+      `Turn: bet ${fmt(turnBet)} (${turnRatioLabel}), 1 caller. ` +
+      `What is the total pot on the river?`,
+    answer: riverPot,
     positions: POSITIONS.slice(0, numPlayers),
     streetLabel: 'River',
   };
 }
 
-// Generate a memorization drill question
+// ─── Memorization Drill ────────────────────────────────────────────────────
 export function generateMemorizationQuestion() {
   const potSizes = [10, 20, 30, 40, 50, 60, 80, 100, 150, 200];
   const potSize = pickRandom(potSizes);
@@ -340,7 +422,7 @@ export function generateMemorizationQuestion() {
     correctMultiple,
     multipleLabel,
     raiseAmount,
-    prompt: `Pot is $${potSize}. Bet is $${betSize}. What multiple of the pot is the max raise?`,
+    prompt: `Pot is ${fmt(potSize)}. A player bets ${fmt(betSize)}. What is the multiple of the pot for the max raise?`,
     answer: correctMultiple,
     choices: shuffle([
       { value: 4, label: '4× the pot' },
@@ -352,38 +434,28 @@ export function generateMemorizationQuestion() {
   };
 }
 
-// Main question generator
-export function generateQuestion(level, blinds, streetLock = null) {
-  const generators = {
-    1: generateLevel1,
-    2: generateLevel2,
-    3: generateLevel3,
-    4: generateLevel4,
-    5: generateLevel5,
-    6: generateLevel6,
-  };
-
+// ─── Main Exports ──────────────────────────────────────────────────────────
+export function generateQuestion(level, blinds) {
+  const generators = { 1: generateLevel1, 2: generateLevel2, 3: generateLevel3, 4: generateLevel4, 5: generateLevel5, 6: generateLevel6 };
   const gen = generators[level] || generators[1];
   const question = gen(blinds);
 
-  // Generate multiple choice options
   if (question.type === 'allin-check') {
     question.choices = [
-      { value: 1, label: 'Yes - All-in is valid' },
-      { value: 0, label: 'No - Stack exceeds pot-sized bet' },
+      { value: 1, label: 'Yes — all-in is valid' },
+      { value: 0, label: 'No — stack exceeds pot-sized bet' },
     ];
   } else {
     const distractors = generateDistractors(question.answer, question);
     question.choices = shuffle([
-      { value: question.answer, label: `$${question.answer}` },
-      ...distractors.map(d => ({ value: d, label: `$${d}` })),
+      { value: question.answer, label: fmt(question.answer) },
+      ...distractors.map(d => ({ value: d, label: fmt(d) })),
     ]);
   }
 
   return question;
 }
 
-// Generate a random level (for "All" mode)
 export function generateRandomLevel(unlockedLevel, blinds) {
   const level = rand(1, unlockedLevel);
   return generateQuestion(level, blinds);

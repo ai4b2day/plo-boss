@@ -108,16 +108,20 @@ export function generateBreakdown(scenario) {
     }
   } else if (type === 'single-raise') {
     const { sb, bb, raiseAmount, numCallers } = scenario;
-    const pot = sb + bb;
-    steps.push({ text: `Blinds: $${sb}/$${bb} → Starting pot = $${pot}`, value: pot });
-    steps.push({ text: `Raise to $${raiseAmount}`, value: raiseAmount });
-    const totalCallers = numCallers || 2;
-    const totalPot = raiseAmount * (totalCallers + 1) + (pot - sb - bb);
-    // Actually: SB and BB are already in the pot. Raiser puts in raiseAmount.
-    // Callers each put in raiseAmount. SB completes to raiseAmount, BB completes to raiseAmount.
-    const finalPot = raiseAmount * (totalCallers + 1);
-    steps.push({ text: `${totalCallers + 1} players each put in $${raiseAmount}`, value: null });
-    steps.push({ text: `Total pot = ${totalCallers + 1} × $${raiseAmount} = $${finalPot}`, value: finalPot, final: true });
+    // SB folds — their $sb stays as dead money
+    // BB + numCallers others each call raiseAmount
+    // UTG (raiser) put in raiseAmount
+    const callers = numCallers || 1;
+    const playersInHand = callers + 1; // callers + UTG raiser
+    const deadMoney = sb;
+    const activePot = raiseAmount * playersInHand;
+    const finalPot = deadMoney + activePot;
+
+    steps.push({ text: `SB posts $${sb}, BB posts $${bb}. Starting pot = $${sb + bb}`, value: sb + bb });
+    steps.push({ text: `UTG raises to $${raiseAmount}`, value: raiseAmount });
+    steps.push({ text: `SB folds → $${sb} stays in pot as dead money`, value: sb });
+    steps.push({ text: `${callers} player${callers > 1 ? 's' : ''} call $${raiseAmount} (+ UTG's $${raiseAmount}) = ${playersInHand} × $${raiseAmount} = $${activePot}`, value: activePot });
+    steps.push({ text: `Total pot = dead $${sb} + $${activePot} = $${finalPot}`, value: finalPot, final: true });
   } else if (type === 'flop-bet') {
     const { existingPot, betAmount } = scenario;
     steps.push({ text: `Pot entering the flop: $${existingPot}`, value: existingPot });
@@ -146,17 +150,19 @@ export function generateBreakdown(scenario) {
     }
     steps.push({ text: `Running pot total: $${runningPot}`, value: runningPot, final: true });
   } else if (type === 'reraise') {
-    const { existingPot, firstRaise, question } = scenario;
-    steps.push({ text: `Pot before action: $${existingPot}`, value: existingPot });
-    steps.push({ text: `First raise to: $${firstRaise}`, value: firstRaise });
-    const potAfterRaise = existingPot + firstRaise;
-    steps.push({ text: `Pot after raise: $${existingPot} + $${firstRaise} = $${potAfterRaise}`, value: potAfterRaise });
-    if (question === 'reraise') {
-      steps.push({ text: `Re-raise = (3 × raise) + pot after raise`, value: null });
-      const reraiseAmount = 3 * firstRaise + potAfterRaise;
-      steps.push({ text: `= (3 × $${firstRaise}) + $${potAfterRaise}`, value: null });
-      steps.push({ text: `= $${3 * firstRaise} + $${potAfterRaise} = $${reraiseAmount}`, value: reraiseAmount, final: true });
-    }
+    const { existingPot, firstBet, firstRaise, potAfterRaise } = scenario;
+    // Re-raise formula: 3 × firstRaise + (pot after A's bet, before B raised)
+    // = 3 × firstRaise + (existingPot + firstBet)
+    const potAfterABet = existingPot + firstBet;
+    const reraiseAmount = 3 * firstRaise + potAfterABet;
+
+    steps.push({ text: `Starting pot: $${existingPot}`, value: existingPot });
+    steps.push({ text: `A bets $${firstBet} → pot = $${potAfterABet}`, value: potAfterABet });
+    steps.push({ text: `B raises to $${firstRaise} (total put in)`, value: firstRaise });
+    steps.push({ text: `Pot after B raises: $${potAfterABet} + $${firstRaise} = $${potAfterRaise}`, value: potAfterRaise });
+    steps.push({ text: `C re-raises. C is calling $${firstRaise} into a pot of $${potAfterABet} (pot before B raised)`, value: null });
+    steps.push({ text: `Re-raise = (3 × $${firstRaise}) + $${potAfterABet}`, value: null });
+    steps.push({ text: `= $${3 * firstRaise} + $${potAfterABet} = $${reraiseAmount}`, value: reraiseAmount, final: true });
   } else if (type === 'memorization') {
     const { potSize, betSize, multiple } = scenario;
     steps.push({ text: `Pot = $${potSize}`, value: potSize });
