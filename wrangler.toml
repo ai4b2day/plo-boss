@@ -1,0 +1,7 @@
+name = "plo-boss"
+pages_build_output_dir = "./dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "plo-boss-emails"
+database_id = "ebbf1e66-520f-4997-9eae-82289d8fa663"

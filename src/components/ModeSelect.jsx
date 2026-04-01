@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { getLevelInfo } from '../hooks/useGameState';
 import Leaderboard from './Leaderboard';
+import EmailSubscribe from './EmailSubscribe';
 
 const MODES = [
   {
@@ -133,6 +134,9 @@ export default function ModeSelect({ gameState, onSelectMode, onSettings }) {
       >
         Jump In &rarr; {state.lastMode === 'speed' ? 'Speed Round' : state.lastMode === 'exam' ? 'Exam Mode' : 'Training Mode'} (last config)
       </button>
+
+      {/* Email Subscribe */}
+      <EmailSubscribe />
 
       {/* Leaderboard */}
       <div>
