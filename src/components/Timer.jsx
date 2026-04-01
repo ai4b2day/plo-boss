@@ -7,28 +7,46 @@ export default function Timer({ timeLeft, isRunning, color, pulsing }) {
 
   return (
     <div className={`flex items-center justify-center ${pulsing ? 'animate-pulse-red' : ''}`}>
-      <div className="relative w-16 h-16">
-        <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
+      <div className="relative w-20 h-20">
+        {/* Glow effect when urgent */}
+        {timeLeft <= 5 && isRunning && (
+          <div className="absolute inset-0 rounded-full bg-danger/20 animate-ping" />
+        )}
+
+        <svg className="w-20 h-20 -rotate-90" viewBox="0 0 64 64">
+          {/* Background track */}
           <circle
             cx="32" cy="32" r={radius}
             fill="none" stroke="currentColor"
             className="text-surface-lighter"
-            strokeWidth="4"
+            strokeWidth="5"
           />
+          {/* Progress arc */}
           <circle
             cx="32" cy="32" r={radius}
             fill="none" stroke="currentColor"
             className={color}
-            strokeWidth="4"
+            strokeWidth="5"
             strokeDasharray={circumference}
             strokeDashoffset={dashOffset}
             strokeLinecap="round"
             style={{ transition: 'stroke-dashoffset 1s linear' }}
           />
         </svg>
-        <div className={`absolute inset-0 flex items-center justify-center font-bold text-lg ${color}`}>
+
+        {/* Center number */}
+        <div className={`absolute inset-0 flex items-center justify-center font-bold ${color} ${
+          timeLeft <= 5 ? 'text-2xl' : 'text-xl'
+        } ${timeLeft <= 3 && isRunning ? 'animate-bounce' : ''}`}>
           {timeLeft}
         </div>
+
+        {/* Urgency label */}
+        {timeLeft <= 5 && isRunning && (
+          <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-danger text-[10px] font-bold uppercase tracking-wider whitespace-nowrap">
+            Hurry!
+          </div>
+        )}
       </div>
     </div>
   );

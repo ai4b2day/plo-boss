@@ -6,7 +6,8 @@
       "Bash(git --version)",
       "Bash(gh --version)",
       "Bash(gh auth:*)",
-      "mcp__832ed325-08e5-498b-a99a-8834b39a4684__search_cloudflare_documentation"
+      "mcp__832ed325-08e5-498b-a99a-8834b39a4684__search_cloudflare_documentation",
+      "mcp__Claude_Preview__preview_start"
     ]
   }
 }

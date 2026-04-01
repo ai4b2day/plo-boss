@@ -17,12 +17,12 @@ export function preflopPot(sb, bb) {
 }
 
 // Calculate pot-sized raise preflop (first to act)
-// First player calls BB, then raises the new pot
-// New pot after call = SB + BB + BB = SB + 2×BB
-// Raise = new pot = SB + 2×BB, total put in = BB (call) + SB + 2×BB = SB + 3×BB
-// Using the formula: 3×BB + SB + BB = 3×BB + SB + BB
+// The BB is the "bet", the SB is the "existing pot before the bet"
+// Formula: 3 × BB + SB
+// Verification: UTG calls BB ($10), pot = SB + BB + call = $5+$10+$10 = $25
+// UTG raises by pot ($25), total put in = $10 + $25 = $35 = 3×10 + 5
 export function preflopPotSizedRaise(sb, bb) {
-  return 3 * bb + sb + bb;
+  return 3 * bb + sb;
 }
 
 // Calculate pot after a bet is called
@@ -100,10 +100,11 @@ export function generateBreakdown(scenario) {
     } else {
       const pot = sb + bb;
       steps.push({ text: `Starting Pot = $${sb} + $${bb} = $${pot}`, value: pot });
-      steps.push({ text: `Pot-sized raise = (3 × BB) + SB + BB`, value: null });
-      steps.push({ text: `= (3 × $${bb}) + $${sb} + $${bb}`, value: null });
-      const answer = 3 * bb + sb + bb;
-      steps.push({ text: `= $${3 * bb} + $${sb + bb} = $${answer}`, value: answer, final: true });
+      steps.push({ text: `Call the BB = $${bb}`, value: bb });
+      steps.push({ text: `Pot after call = $${pot} + $${bb} = $${pot + bb}`, value: pot + bb });
+      steps.push({ text: `Raise by the pot = $${pot + bb}`, value: pot + bb });
+      const answer = 3 * bb + sb;
+      steps.push({ text: `Total = call ($${bb}) + raise ($${pot + bb}) = $${answer}`, value: answer, final: true });
     }
   } else if (type === 'single-raise') {
     const { sb, bb, raiseAmount, numCallers } = scenario;

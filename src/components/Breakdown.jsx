@@ -6,7 +6,7 @@ export default function Breakdown({ scenario, isCorrect }) {
   return (
     <div className="bg-surface-light rounded-xl p-4 border border-surface-lighter animate-slide-up">
       <div className={`text-sm font-bold mb-3 ${isCorrect ? 'text-success' : 'text-danger'}`}>
-        {isCorrect ? 'Correct!' : 'Incorrect'} — Here\'s the breakdown:
+        {isCorrect ? 'Correct!' : 'Incorrect'} — Here's the breakdown:
       </div>
 
       <div className="space-y-2">

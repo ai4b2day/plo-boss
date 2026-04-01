@@ -4,6 +4,7 @@ import { generateBreakdown } from '../utils/potCalc';
 import Timer from './Timer';
 import ScoreDisplay from './ScoreDisplay';
 import Breakdown from './Breakdown';
+import { ConfettiExplosion, StreakCelebration, CorrectFlash, WrongFlash, SessionComplete } from './Celebration';
 import useTimer from '../hooks/useTimer';
 
 const POSITION_COLORS = {
@@ -52,6 +53,11 @@ export default function GameBoard({ mode, gameState, config, onEnd, onBack }) {
   const [sessionDone, setSessionDone] = useState(false);
   const [sessionResults, setSessionResults] = useState([]);
   const inputRef = useRef(null);
+
+  // Celebration state
+  const [showCorrectFlash, setShowCorrectFlash] = useState(false);
+  const [showWrongFlash, setShowWrongFlash] = useState(false);
+  const [showStreakCelebration, setShowStreakCelebration] = useState(null);
 
   // Speed round tracking
   const [speedStartTime, setSpeedStartTime] = useState(null);
@@ -133,6 +139,22 @@ export default function GameBoard({ mode, gameState, config, onEnd, onBack }) {
     setLastCorrect(correct);
     setShowResult(true);
 
+    // Trigger visual celebrations
+    if (correct) {
+      setShowCorrectFlash(true);
+      setTimeout(() => setShowCorrectFlash(false), 500);
+
+      // Check for streak milestones (streak hasn't updated yet, so +1)
+      const newStreak = gameState.sessionStreak + 1;
+      if ([3, 5, 10, 25].includes(newStreak)) {
+        setShowStreakCelebration(newStreak);
+        setTimeout(() => setShowStreakCelebration(null), 1800);
+      }
+    } else {
+      setShowWrongFlash(true);
+      setTimeout(() => setShowWrongFlash(false), 500);
+    }
+
     const xp = recordAnswer(correct, mode, question.level, timer.timeLeft);
 
     // Speed round time tracking
@@ -202,20 +224,17 @@ export default function GameBoard({ mode, gameState, config, onEnd, onBack }) {
     const accuracy = sessionTotal > 0 ? Math.round((sessionCorrect / sessionTotal) * 100) : 0;
 
     return (
-      <div className="max-w-lg mx-auto p-4 space-y-4 animate-slide-up">
-        <div className="text-center py-6">
-          <div className="text-5xl mb-3">{accuracy >= 80 ? '\u{1F3C6}' : accuracy >= 50 ? '\u{1F44D}' : '\u{1F4AA}'}</div>
-          <h2 className="text-2xl font-bold text-gold">Session Complete!</h2>
-        </div>
+      <div className="max-w-lg mx-auto p-4 space-y-4">
+        <SessionComplete accuracy={accuracy} xp={sessionXP} />
 
-        <div className="bg-surface-light rounded-xl p-4 border border-surface-lighter space-y-3">
+        <div className="bg-surface-light rounded-xl p-4 border border-surface-lighter space-y-3 animate-slide-up">
           <div className="flex justify-between">
             <span className="text-text-secondary">Score</span>
             <span className="text-gold font-bold">{sessionCorrect}/{sessionTotal} ({accuracy}%)</span>
           </div>
           <div className="flex justify-between">
             <span className="text-text-secondary">XP Earned</span>
-            <span className="text-gold font-bold">+{sessionXP}</span>
+            <span className="text-gold font-bold animate-bounce-in">+{sessionXP}</span>
           </div>
           {mode === 'speed' && (
             <>
@@ -237,7 +256,7 @@ export default function GameBoard({ mode, gameState, config, onEnd, onBack }) {
 
         {/* Question breakdown (show in training/exam, speed summary) */}
         {mode !== 'speed' && sessionResults.length > 0 && (
-          <div className="bg-surface-light rounded-xl p-4 border border-surface-lighter">
+          <div className="bg-surface-light rounded-xl p-4 border border-surface-lighter animate-slide-up">
             <h3 className="text-text-primary font-bold mb-3">Question Review</h3>
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {sessionResults.map((r, i) => (
@@ -257,7 +276,7 @@ export default function GameBoard({ mode, gameState, config, onEnd, onBack }) {
         )}
 
         {mode === 'speed' && (
-          <div className="bg-surface-light rounded-xl p-4 border border-surface-lighter">
+          <div className="bg-surface-light rounded-xl p-4 border border-surface-lighter animate-slide-up">
             <h3 className="text-text-primary font-bold mb-3">Time Breakdown</h3>
             <div className="space-y-1">
               {speedQuestionTimes.map((qt, i) => (
@@ -274,7 +293,7 @@ export default function GameBoard({ mode, gameState, config, onEnd, onBack }) {
 
         <button
           onClick={onEnd}
-          className="w-full py-3 bg-gradient-to-r from-gold-dark to-gold text-surface font-bold rounded-xl"
+          className="w-full py-3 bg-gradient-to-r from-gold-dark to-gold text-surface font-bold rounded-xl animate-slide-up"
         >
           Back to Menu
         </button>
@@ -288,6 +307,11 @@ export default function GameBoard({ mode, gameState, config, onEnd, onBack }) {
 
   return (
     <div className="max-w-lg mx-auto p-4 space-y-4">
+      {/* Celebration overlays */}
+      {showCorrectFlash && <CorrectFlash />}
+      {showWrongFlash && <WrongFlash />}
+      {showStreakCelebration && <StreakCelebration streak={showStreakCelebration} />}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <button onClick={onBack} className="text-text-secondary hover:text-text-primary text-sm">&larr; Quit</button>
@@ -384,7 +408,7 @@ export default function GameBoard({ mode, gameState, config, onEnd, onBack }) {
         <div className="space-y-3 animate-slide-up">
           {/* Brief indicator for exam/speed */}
           {(mode === 'exam' || mode === 'speed') && (
-            <div className={`text-center py-3 rounded-xl font-bold text-lg ${lastCorrect ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'}`}>
+            <div className={`text-center py-3 rounded-xl font-bold text-lg animate-bounce-in ${lastCorrect ? 'bg-success/20 text-success' : 'bg-danger/20 text-danger'}`}>
               {lastCorrect ? 'Correct!' : `Wrong — Answer: $${question.answer}`}
             </div>
           )}
