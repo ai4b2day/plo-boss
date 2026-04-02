@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { generateQuestion, generateRandomLevel } from '../utils/questionGenerator';
+import { generateQuestion, generateRandomLevel, questionSignature } from '../utils/questionGenerator';
 import { generateBreakdown } from '../utils/potCalc';
 import Timer from './Timer';
 import ScoreDisplay from './ScoreDisplay';
@@ -76,6 +76,11 @@ export default function GameBoard({ mode, gameState, config, onEnd, onBack }) {
   const timer = useTimer(15, handleExpire);
 
   const activeBlinds = gameState.getActiveBlinds();
+  // Full-session dedup: never repeat an identical question in one session
+  const seenQuestions = useRef(new Set());
+  // Track whether the last answer was wrong so we can give a similar-but-reframed follow-up
+  const lastWasWrong = useRef(false);
+  const lastWrongQuestion = useRef(null);
 
   function getLevel() {
     if (config.difficultyLevel > 0) return Math.min(config.difficultyLevel, state.unlockedLevel);
@@ -84,7 +89,37 @@ export default function GameBoard({ mode, gameState, config, onEnd, onBack }) {
 
   function nextQuestion() {
     const level = getLevel();
-    const q = generateQuestion(level, activeBlinds);
+
+    let q;
+    let attempts = 0;
+
+    if (lastWasWrong.current && lastWrongQuestion.current) {
+      // After a wrong answer: generate same level so math is similar,
+      // but keep trying until we get a different signature (different position framing).
+      // Give up after 12 attempts and fall through to normal dedup logic.
+      const wrongSig = questionSignature(lastWrongQuestion.current);
+      do {
+        q = generateQuestion(level, activeBlinds);
+        attempts++;
+      } while (
+        attempts < 12 &&
+        (questionSignature(q) === wrongSig || seenQuestions.current.has(questionSignature(q)))
+      );
+    } else {
+      // Normal path: never show a question seen earlier this session
+      do {
+        q = generateQuestion(level, activeBlinds);
+        attempts++;
+      } while (
+        attempts < 12 &&
+        seenQuestions.current.has(questionSignature(q))
+      );
+    }
+
+    seenQuestions.current.add(questionSignature(q));
+    lastWasWrong.current = false;
+    lastWrongQuestion.current = null;
+
     setQuestion(q);
     setInputValue('');
     setShowResult(false);
@@ -138,6 +173,12 @@ export default function GameBoard({ mode, gameState, config, onEnd, onBack }) {
 
     setLastCorrect(correct);
     setShowResult(true);
+
+    // Track wrong answers so nextQuestion() can give a reframed version
+    if (!correct) {
+      lastWasWrong.current = true;
+      lastWrongQuestion.current = question;
+    }
 
     // Trigger visual celebrations
     if (correct) {
